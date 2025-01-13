@@ -13,26 +13,38 @@ namespace ModHelp.Patches;
 [HarmonyPatch]
 class UINote_AddImage
 {
+    //FreshCloth made this.
     [HarmonyPrefix, HarmonyPatch(typeof(UINote), "AddImage", [typeof(string)])]
     public static bool AddImage(UINote __instance, string idFile)
     {
-        var methods = __instance.GetType().GetMethods(BindingFlags.NonPublic | BindingFlags.Instance);
+        if (ModHelpSetup.modc == null) return true;
 
-        var refImage = methods.SingleOrDefault(m => m.Name == "Load" && m.ReturnType == typeof(UIItem) && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(string));
+        if (!SpriteReplacer.dictModItems.TryGetValue(idFile, out var path))
+        {
+            return false;
+        }
 
-        UIItem utem = (UIItem)refImage.Invoke(__instance, ["UI/Element/Deco/ImageNote"]);
-        Image image = utem.image1;
-
-        string path = PackageIterator.GetLoadedPackages(BuildPagesPatch.currentlyBuildingFile).Select(d => d.GetFiles(idFile + ".png", SearchOption.AllDirectories)).FirstOrDefault()?.FirstOrDefault()?.FullName;
-
-        Sprite sprite = image.sprite = path.LoadSprite();
-        image.SetNativeSize();
-        image.transform.parent.Rect().sizeDelta = image.Rect().sizeDelta;
-
-        if (sprite == null)
+        var image = Util.Instantiate<UIItem>("UI/Element/Deco/ImageNote", __instance.layout).image1;
+        image.sprite = $"{path}.png".LoadSprite();
+        if (image.sprite == null)
         {
             image.transform.parent.SetActive(enable: false);
+            return false;
         }
+
+        image.preserveAspect = true;
+        image.SetNativeSize();
+
+        var layout = __instance.layout;
+        var available = layout.preferredWidth - (layout.padding.left + layout.padding.right) * 4;
+        var ratio = image.sprite.texture.width / available;
+        if (ratio < 1f)
+        {
+            return false;
+        }
+
+        var size = image.rectTransform.sizeDelta;
+        image.rectTransform.sizeDelta = size with { x = size.x / ratio };
 
         return false;
     }
