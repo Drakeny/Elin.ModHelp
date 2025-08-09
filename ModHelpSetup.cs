@@ -6,6 +6,8 @@ using UnityEngine;
 using System.Text;
 using Cwl.Helper.FileUtil;
 using Cwl.Helper.Unity;
+using Cwl.API.Attributes;
+using System.Text.RegularExpressions;
 
 namespace ModHelp;
 
@@ -16,20 +18,20 @@ public static class ModHelpSetup
     public static UIText headerText = null;
     public static UIText topicsText = null;
     public static Dictionary<string, FileInfo> allHelpFilesDict = null;
-    [HarmonyPostfix, HarmonyPatch(typeof(Core), "Update")]
-    public static void Update(Core __instance)
-    {
-        if (Input.GetKeyDown(KeyCode.F1) && Input.GetKey(KeyCode.LeftShift))
-        {
-            //TODO: figure this out, right now using shift+f1 will open both help windows
-            // MetadataHelper.LoadMetadata();
-            // WritePackagesToFile();
-            // CoroutineHelper.Deferred(() =>
-            // {
-            //     CallModHelp();
-            // }, 5);
-        }
-    }
+    // [HarmonyPostfix, HarmonyPatch(typeof(Core), "Update")]
+    // public static void Update(Core __instance)
+    // {
+    //     if (Input.GetKeyDown(KeyCode.F1) && Input.GetKey(KeyCode.LeftShift))
+    //     {
+    //         //TODO: figure this out, right now using shift+f1 will open both help windows
+    //         // MetadataHelper.LoadMetadata();
+    //         // WritePackagesToFile();
+    //         // CoroutineHelper.Deferred(() =>
+    //         // {
+    //         //     CallModHelp();
+    //         // }, 5);
+    //     }
+    // }
 
     public static void CallModHelp()
     {
@@ -54,6 +56,9 @@ public static class ModHelpSetup
                 break;
             case "JP":
                 (modc as LayerHelp).book.Show("drakenydev_elin_modhelp", "概要");
+                break;
+            default:
+                (modc as LayerHelp).book.Show("drakenydev_elin_modhelp", "About");
                 break;
         }
 
@@ -95,7 +100,7 @@ public static class ModHelpSetup
             {
                 WriteDefaultHelp(package.id, package.title);
                 StringBuilder defaultPackageListItem = new StringBuilder();
-                defaultPackageListItem.Append(package.id.Replace("-", "_"));
+                defaultPackageListItem.Append(SanitizeId(package.id));
                 defaultPackageListItem.Append("-default,");
                 defaultPackageListItem.Append("$" + package.title);
                 file.WriteLine(defaultPackageListItem.ToString());
@@ -103,13 +108,13 @@ public static class ModHelpSetup
             }
 
             StringBuilder packageListItem = new StringBuilder();
-            packageListItem.Append(package.id.Replace("-", "_"));
+            packageListItem.Append(SanitizeId(package.id));
             packageListItem.Append("-,");
             packageListItem.Append("$" + package.title);
             file.WriteLine(packageListItem.ToString());
             foreach (string topic in topics)
             {
-                file.WriteLine($"{package.id.Replace("-", "_")}-{topic},{topic}");
+                file.WriteLine($"{SanitizeId(package.id)}-{topic},{topic}");
             }
         }
     }
@@ -118,7 +123,13 @@ public static class ModHelpSetup
     {
         string loc = EClass.core.config.lang;
         Metadata metadata = MetadataHelper.currentlyLoadedMetadata.FirstOrDefault(m => m.guid == id);
-        using StreamWriter file = new(Plugin.dir + "/LangMod/" + loc + "/Text/Help/DefaultFiles/" + id.Replace("-", "_") + ".txt");
+        string filePath = Plugin.dir + "/LangMod/" + loc + "/Text/Help/DefaultFiles/" + SanitizeId(id) + ".txt";
+        string directoryPath = Path.GetDirectoryName(filePath);
+        if (!Directory.Exists(directoryPath))
+        {
+            Directory.CreateDirectory(directoryPath);
+        }
+        using StreamWriter file = new(filePath);
         file.WriteLine("$default");
         switch (loc)
         {
@@ -220,7 +231,15 @@ public static class ModHelpSetup
     {
         var lastUpdates = MetadataHelper.GetRecentlyUpdatedMetadata();
         var loc = EClass.core.config.lang;
-        using StreamWriter file = new(Plugin.dir + "/LangMod/" + loc + "/Text/Help/about.txt");
+        string filePath = Plugin.dir + "/LangMod/" + loc + "/Text/Help/about.txt";
+        string directoryPath = Path.GetDirectoryName(filePath);
+
+        if (!Directory.Exists(directoryPath))
+        {
+            Directory.CreateDirectory(directoryPath);
+        }
+
+        using StreamWriter file = new(filePath);
         switch (loc)
         {
             case "EN":
@@ -259,6 +278,20 @@ public static class ModHelpSetup
                 file.WriteLine("{topic|最近更新}");
                 break;
 
+            default:
+                file.WriteLine("$About");
+                file.WriteLine("{topic|Welcome to Mod Help!}");
+                file.WriteLine("{nerun} <color=#00BFFF>Hi, mod help pages are currently hardcoded, and it seems it doesn't support your language yet, sorry. Would be so kind to go scream at me over on the steamworkshop comment section about this?</color>");
+                file.WriteLine("");
+                file.WriteLine("{pair|Tip:|Mods listed with a small crystal next to their names have been updated recently.}");
+                file.WriteLine("{pair|Tip:|You can use the search bar to find information about mods that have provided help files.}");
+                file.WriteLine("");
+                file.WriteLine($"・ You have {MetadataHelper.currentlyLoadedMetadata.Count} mods loaded.");
+                file.WriteLine("");
+                file.WriteLine("・ If you're a mod creator, you can include your own help files, which will automatically be loaded here, keeping everything organized and accessible. Check the 'For creators' section for more information.");
+                file.WriteLine("{topic|Recently Updated}");
+                break;
+
         }
 
         foreach (var lastUpdate in lastUpdates)
@@ -285,35 +318,58 @@ public static class ModHelpSetup
         {
             lines.AddRange(File.ReadAllLines(creators.FullName));
         }
+        else
+        {
+            lines.AddRange(File.ReadAllLines(Plugin.dir + "/LangMod/EN/Text/Help/Creators.txt"));
+        }
         if (changelog != null)
         {
             lines.AddRange(File.ReadAllLines(changelog.FullName));
         }
+        else
+        {
+            lines.AddRange(File.ReadAllLines(Plugin.dir + "/LangMod/EN/Text/Help/Changelog.txt"));
+        }
         File.WriteAllLines(Plugin.dir + "/LangMod/" + EClass.core.config.lang + "/Text/Help/help.txt", lines);
     }
 
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(HotItemContext), "Show")]
-    public static void Show(string id)
+    [CwlContextMenu("Mod Help")]
+    public static void ShowModHelp()
     {
-        if (!(EClass.ui.contextMenu.currentMenu == null) && id == "system")
+        MetadataHelper.LoadMetadata();
+        BuildAboutFile();
+        WritePackagesToFile();
+        CoroutineHelper.Deferred(() =>
         {
-            UIContextMenu uIContextMenu = EClass.ui.contextMenu.currentMenu;
+            CallModHelp();
+        }, 5);
 
-            var a = uIContextMenu.AddButton("Mod Help", delegate
-            {
-                MetadataHelper.LoadMetadata();
-                BuildAboutFile();
+        //     a.gameObject.transform.SetSiblingIndex(11);
 
-                WritePackagesToFile();
+        // if (!(EClass.ui.contextMenu.currentMenu == null) && id == "system")
+        // {
+        //     UIContextMenu uIContextMenu = EClass.ui.contextMenu.currentMenu;
 
-                CoroutineHelper.Deferred(() =>
-                {
-                    CallModHelp();
-                }, 5);
-            });
+        //     var a = uIContextMenu.AddButton("Mod Help", delegate
+        //     {
+        //     });
 
-            a.gameObject.transform.SetSiblingIndex(11);
+        // }
+    }
+
+    public static string SanitizeId(string id)
+    {
+        return Regex.Replace(id, $"[{Regex.Escape(new(Path.GetInvalidFileNameChars()))}-]", "_");
+    }
+
+    public static void CleanDefaultFiles()
+    {
+        //Just to be sure.
+        //actually, no
+        string[] files = Directory.GetFiles(Plugin.dir + "/LangMod/" + EClass.core.config.lang + "/Text/Help/DefaultFiles");
+        foreach (string file in files)
+        {
+            File.Delete(file);
         }
     }
 

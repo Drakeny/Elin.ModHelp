@@ -19,33 +19,75 @@ class UINote_AddImage
     {
         if (ModHelpSetup.modc == null) return true;
 
-        if (!SpriteReplacer.dictModItems.TryGetValue(idFile, out var path))
+        string path = PackageIterator.GetLoadedPackages(BuildPagesPatch.currentlyBuildingFile).FirstOrDefault()?.FullName + $"/Texture/{idFile}.png";
+        Plugin.Log.LogDebug($"Current image path {path}");
+
+        if (!File.Exists(path))
         {
-            return false;
+            //return false;
         }
 
+
         var image = Util.Instantiate<UIItem>("UI/Element/Deco/ImageNote", __instance.layout).image1;
-        image.sprite = $"{path}.png".LoadSprite();
+        image.sprite = path.LoadSprite();
+
         if (image.sprite == null)
         {
-            image.transform.parent.SetActive(enable: false);
+            image.transform.parent.SetActive(false);
             return false;
         }
 
         image.preserveAspect = true;
-        image.SetNativeSize();
 
         var layout = __instance.layout;
-        var available = layout.preferredWidth - (layout.padding.left + layout.padding.right) * 4;
-        var ratio = image.sprite.texture.width / available;
-        if (ratio < 1f)
+        var layoutRect = layout.GetComponent<RectTransform>();
+
+        CoroutineHelper.Deferred(() =>
         {
-            return false;
-        }
+            LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRect);
 
-        var size = image.rectTransform.sizeDelta;
-        image.rectTransform.sizeDelta = size with { x = size.x / ratio };
+            float totalWidth = layoutRect.rect.width;
+            float paddingX = layout.padding.left + layout.padding.right;
 
+            float availableWidth = totalWidth - paddingX;
+
+            // Fixed maximum height in pixels
+            const float maxDisplayHeight = 400f;
+
+            if (availableWidth <= 0)
+                return;
+
+            var texture = image.sprite.texture;
+            float texWidth = texture.width;
+            float texHeight = texture.height;
+
+            // Calculate scale needed for width and height separately
+            float scaleByWidth = texWidth / availableWidth;
+            float scaleByHeight = texHeight / maxDisplayHeight;
+
+            // Pick the larger scale (so image fits both width & height)
+            float scale = Math.Max(scaleByWidth, scaleByHeight);
+
+            float newWidth = texWidth;
+            float newHeight = texHeight;
+
+            if (scale > 1f)
+            {
+                newWidth /= scale;
+                newHeight /= scale;
+            }
+
+            image.rectTransform.sizeDelta = new Vector2(newWidth, newHeight);
+
+            var layoutElement = image.GetComponent<LayoutElement>() ?? image.gameObject.AddComponent<LayoutElement>();
+            layoutElement.preferredWidth = newWidth;
+            layoutElement.preferredHeight = newHeight;
+
+            Plugin.Log.LogInfo($"Final image size: {newWidth}x{newHeight} (scale {scale})");
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRect);
+
+        }, 2);
         return false;
     }
 }

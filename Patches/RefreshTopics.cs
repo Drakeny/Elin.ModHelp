@@ -157,7 +157,7 @@ class RefreshTopicsPatch
         for (int i = 1; i < items.Count; i++)
         {
             UIBook.Item bitem = items[i] as UIBook.Item;
-            var metadata = MetadataHelper.currentlyLoadedMetadata.FirstOrDefault(m => m.guid.Replace("-", "_") == bitem.idFile);
+            var metadata = MetadataHelper.currentlyLoadedMetadata.FirstOrDefault(m => ModHelpSetup.SanitizeId(m.guid) == bitem.idFile);
             if (metadata.updated)
             {
                 items.RemoveAt(i);
